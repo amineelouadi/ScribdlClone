@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Skribbl Clone</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #game { display: none; }
+        canvas { border: 2px solid black; }
+    </style>
+</head>
+<body>
+<h1>Welcome to Skribbl Clone</h1>
+<div id="login">
+    <input type="text" id="playerName" placeholder="Enter your name">
+    <button onclick="joinGame()">Join Game</button>
+</div>
+<div id="game">
+    <h2>Game Area</h2>
+    <button onclick="startGame()">Start Game</button>
+    <div id="messages"></div>
+</div>
+
+<!-- JavaScript code for the Drawing Interface -->
+<script>
+    let canvas, ctx;
+    let isDrawing = false;
+    let lastX = 0, lastY = 0;
+    let socket;
+
+    function initDrawing() {
+        canvas = document.createElement('canvas');
+        canvas.width = 800;
+        canvas.height = 600;
+        document.getElementById('game').appendChild(canvas);
+        ctx = canvas.getContext('2d');
+
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+    }
+
+    function startDrawing(e) {
+        isDrawing = true;
+        [lastX, lastY] = [e.offsetX, e.offsetY];
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        const currentX = e.offsetX;
+        const currentY = e.offsetY;
+
+        // Draw on the canvas
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(currentX, currentY);
+        ctx.stroke();
+
+        // Send drawing data to the server
+        if (socket) {
+            const drawData = JSON.stringify({
+                type: 'draw',
+                lastX,
+                lastY,
+                currentX,
+                currentY
+            });
+            socket.send(drawData);
+        }
+
+        [lastX, lastY] = [currentX, currentY];
+    }
+
+    function stopDrawing() {
+        isDrawing = false;
+    }
+
+    function handleIncomingMessage(event) {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'draw') {
+                const { lastX, lastY, currentX, currentY } = data;
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(currentX, currentY);
+                ctx.stroke();
+            }
+        } catch (e) {
+            const messages = document.getElementById('messages');
+            messages.innerHTML += `<p>${event.data}</p>`;
+        }
+    }
+
+    function joinGame() {
+        const playerName = document.getElementById('playerName').value;
+        if (playerName) {
+            fetch(`http://localhost:8080/api/join?name=${playerName}`)
+                .then(response => response.text())
+                .then(data => {
+                    console.log(data);
+                    socket.send(`join:${playerName}`);
+                    document.getElementById('login').style.display = 'none';
+                    document.getElementById('game').style.display = 'block';
+                })
+                .catch(error => console.error('Error:', error));
+        }
+    }
+
+    function startGame() {
+        fetch('http://localhost:8080/api/start')
+            .then(response => response.text())
+            .then(data => {
+                console.log(data);
+                socket.send('start:');
+            })
+            .catch(error => console.error('Error:', error));
+    }
+
+    // WebSocket initialization
+    window.onload = function() {
+        socket = new WebSocket('ws://localhost:8080/game');
+
+        socket.onopen = function() {
+            console.log('WebSocket connection established.');
+        };
+
+        socket.onmessage = function(event) {
+            handleIncomingMessage(event);
+        };
+    };
+
+    initDrawing();
+</script>
+</body>
+</html>
